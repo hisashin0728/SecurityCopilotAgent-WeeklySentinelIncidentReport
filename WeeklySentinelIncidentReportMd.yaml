@@ -42,7 +42,7 @@ SkillGroups:
         Interfaces:
           - Agent
         Settings:
-          Model: gpt-4o
+          Model: gpt-4.1
           Instructions: |-
             # ミッション
             あなたは Microsoft Sentinel のインシデントを週次で分析し、
