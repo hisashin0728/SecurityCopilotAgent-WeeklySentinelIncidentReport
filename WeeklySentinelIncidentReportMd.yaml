@@ -7,6 +7,38 @@ Descriptor:
     対策方針を含む Markdown レポートを生成するエージェント。
     KQL スキルのみを使用し、メール通知は行わず Markdown テキストを出力するのみ。
     PowerAutomate などの外部フローから呼び出して利用する。
+  Settings:
+    - Name: SentinelTenantId
+      Label: Sentinel テナント ID
+      Description: >-
+        Microsoft Sentinel ワークスペースの
+        Microsoft Entra テナント ID を指定してください。
+      HintText: "例: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+      SettingType: String
+      Required: true
+    - Name: SentinelSubscriptionId
+      Label: Sentinel サブスクリプション ID
+      Description: >-
+        Microsoft Sentinel ワークスペースが存在する
+        Azure サブスクリプション ID を指定してください。
+      HintText: "例: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+      SettingType: String
+      Required: true
+    - Name: SentinelResourceGroup
+      Label: Sentinel リソースグループ
+      Description: >-
+        Microsoft Sentinel ワークスペースの
+        リソースグループ名を指定してください。
+      HintText: "例: rg-sentinel"
+      SettingType: String
+      Required: true
+    - Name: SentinelWorkspaceName
+      Label: Sentinel ワークスペース名
+      Description: >-
+        Microsoft Sentinel の Log Analytics ワークスペース名を指定してください。
+      HintText: "例: law-sentinel"
+      SettingType: String
+      Required: true
 
 AgentDefinitions:
   - Name: WeeklySentinelIncidentReportMdAgent
@@ -266,10 +298,10 @@ SkillGroups:
           Severity 内訳を週別（ThisWeek / LastWeek）で返す。
         Settings:
           Target: Sentinel
-          TenantId: "<YOUR_TENANT_ID>"
-          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
-          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
-          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          TenantId: "{{SentinelTenantId}}"
+          SubscriptionId: "{{SentinelSubscriptionId}}"
+          ResourceGroupName: "{{SentinelResourceGroup}}"
+          WorkspaceName: "{{SentinelWorkspaceName}}"
           Template: |-
             SecurityIncident
             | where TimeGenerated > ago(14d)
@@ -291,10 +323,10 @@ SkillGroups:
           ProviderName・週別（ThisWeek / LastWeek）で集計する。
         Settings:
           Target: Sentinel
-          TenantId: "<YOUR_TENANT_ID>"
-          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
-          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
-          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          TenantId: "{{SentinelTenantId}}"
+          SubscriptionId: "{{SentinelSubscriptionId}}"
+          ResourceGroupName: "{{SentinelResourceGroup}}"
+          WorkspaceName: "{{SentinelWorkspaceName}}"
           Template: |-
             SecurityAlert
             | where TimeGenerated > ago(14d)
@@ -314,10 +346,10 @@ SkillGroups:
           Severity を含めて返す。
         Settings:
           Target: Sentinel
-          TenantId: "<YOUR_TENANT_ID>"
-          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
-          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
-          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          TenantId: "{{SentinelTenantId}}"
+          SubscriptionId: "{{SentinelSubscriptionId}}"
+          ResourceGroupName: "{{SentinelResourceGroup}}"
+          WorkspaceName: "{{SentinelWorkspaceName}}"
           Template: |-
             SecurityAlert
             | where TimeGenerated > ago(14d)
@@ -341,10 +373,10 @@ SkillGroups:
           ソートし、上位5件のインシデント詳細を返す。
         Settings:
           Target: Sentinel
-          TenantId: "<YOUR_TENANT_ID>"
-          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
-          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
-          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          TenantId: "{{SentinelTenantId}}"
+          SubscriptionId: "{{SentinelSubscriptionId}}"
+          ResourceGroupName: "{{SentinelResourceGroup}}"
+          WorkspaceName: "{{SentinelWorkspaceName}}"
           Template: |-
             SecurityIncident
             | where TimeGenerated > ago(7d)
@@ -382,10 +414,10 @@ SkillGroups:
             Required: true
         Settings:
           Target: Sentinel
-          TenantId: "<YOUR_TENANT_ID>"
-          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
-          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
-          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          TenantId: "{{SentinelTenantId}}"
+          SubscriptionId: "{{SentinelSubscriptionId}}"
+          ResourceGroupName: "{{SentinelResourceGroup}}"
+          WorkspaceName: "{{SentinelWorkspaceName}}"
           Template: |-
             SecurityIncident
             | where TimeGenerated > ago(14d)
