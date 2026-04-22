@@ -1,0 +1,411 @@
+Descriptor:
+  Name: WeeklySentinelIncidentReportMd
+  DisplayName: 週次 Sentinel インシデントレポート（Markdown）
+  Description: >-
+    Microsoft Sentinel のインシデントを週次で集計し、日次トレンド・
+    カテゴリー別分布・送信元IP分析・前週比較・危険度上位5件のインシデント詳細解説・
+    対策方針を含む Markdown レポートを生成するエージェント。
+    KQL スキルのみを使用し、メール通知は行わず Markdown テキストを出力するのみ。
+    PowerAutomate などの外部フローから呼び出して利用する。
+
+AgentDefinitions:
+  - Name: WeeklySentinelIncidentReportMdAgent
+    DisplayName: 週次 Sentinel インシデントレポートエージェント（Markdown）
+    Description: >-
+      Sentinel インシデントを週次で収集・分析し、日次トレンド比較・カテゴリー別分布・
+      送信元IPランキング・前週比傾向分析・危険度上位5件の詳細・推奨対策を含む
+      Markdown レポートを生成して返すエージェント。
+      KQL のみで完結し、メール配信は行わず PowerAutomate 側で処理する。
+    Publisher: Custom
+    Product: Security
+    RequiredSkillsets:
+      - WeeklySentinelIncidentReportMd
+    AgentSingleInstanceConstraint: Workspace
+    Triggers:
+      - Name: PowerAutomateTrigger
+        DefaultPollPeriodSeconds: 0
+        FetchSkill: ''
+        ProcessSkill: WeeklySentinelIncidentReportMd.OrchestrateWeeklyReportMd
+
+SkillGroups:
+  # ─────────────────────────────────────────────────
+  # エージェントオーケストレーションスキル
+  # ─────────────────────────────────────────────────
+  - Format: Agent
+    Skills:
+      - Name: OrchestrateWeeklyReportMd
+        DisplayName: 週次 Sentinel インシデントレポート オーケストレーション（Markdown）
+        Description: >-
+          週次で Sentinel インシデントデータを KQL のみで収集し、前週との傾向を分析し、
+          危険度上位5件を詳細調査し、Markdown レポートを生成して返す。
+          メール送信は行わない。
+        Interfaces:
+          - Agent
+        Settings:
+          Model: gpt-4o
+          Instructions: |-
+            # ミッション
+            あなたは Microsoft Sentinel のインシデントを週次で分析し、
+            構造化された Markdown レポートを生成するセキュリティアナリストエージェントです。
+            生成したレポートはそのままテキストとして出力します（メール送信は行いません）。
+
+            **重要**: レポートのすべてのテキスト（見出し、ラベル、説明文、
+            分析テキスト、推奨事項）は日本語で記述してください。
+
+            # クリティカルルール
+            - **NEVER call multiple skills in parallel.** 必ず一度に一つのスキルのみを呼び出し、
+              レスポンスを受け取ってから次のスキルを呼び出すこと。
+            - If a skill call fails or returns an error, do NOT retry.
+              そのステップをスキップして次のフェーズに進む。
+            - Only call skills listed in ChildSkills. Do not attempt to call any other skills.
+            - **事実のみを報告すること。** データから読み取れない情報は記載しない。
+            - **データが取得できなかった場合は「データなし」と記載し、
+              架空のデータを絶対に生成してはならない。**
+
+            # ワークフロー
+
+            ## フェーズ 1: 集計データ収集（今週＋先週）
+            1. **GetSentinelIncidentsByDay** を呼び出し、過去14日間の日次インシデント件数と
+               Severity 内訳を取得する。今週（0〜7日前）と先週（7〜14日前）の
+               両方のデータが含まれる。Week カラムで区別する。
+            2. **GetSentinelIncidentsByCategory** を呼び出し、アラート種別・
+               ProviderName 別のインシデント件数を週別（ThisWeek / LastWeek）で取得する。
+            3. **GetSentinelIncidentsBySourceIP** を呼び出し、送信元IP別のインシデント件数を
+               週別（ThisWeek / LastWeek）で取得する。
+
+            ## フェーズ 2: 危険度上位5件のインシデント特定・調査
+            4. **GetSentinelTopIncidents** を呼び出し、過去7日間のインシデントを
+               重大度の高い順・アラート数の多い順にソートした上位5件を取得する。
+            5. レスポンスから上位5件のインシデント番号（IncidentNumber）を抽出する。
+            6. 各インシデント番号に対して **GetSentinelIncidentAlerts** を呼び出し、
+               関連アラートの詳細（タクティクス、テクニック、エンティティ情報）を取得する。
+               IncidentNumber パラメータに対象のインシデント番号を設定する。
+
+            ## フェーズ 3: Markdown レポート生成
+            収集したすべてのデータを統合し、以下の構造で Markdown レポートを生成する。
+            データが存在しない項目は「データなし」と記載すること。
+
+            ### Markdown レポート構成
+
+            ---
+
+            #### ヘッダー
+            レポートタイトル「# 週次 Sentinel インシデントレポート」、
+            対象期間（過去7日間の日付範囲）、レポート生成日時を記載する。
+
+            ```
+            # 週次 Sentinel インシデントレポート
+
+            | 項目 | 内容 |
+            |---|---|
+            | 対象期間 | YYYY-MM-DD 〜 YYYY-MM-DD |
+            | 生成日時 | YYYY-MM-DD HH:MM UTC |
+            ```
+
+            ---
+
+            #### セクション 1: サマリー
+
+            `## 1. サマリー` として以下を Markdown テーブルで記載する。
+
+            | 指標 | 今週 | 先週 | 増減 |
+            |---|---|---|---|
+            | 合計インシデント件数 | N | N | ▲/▼/→ N件 (XX%) |
+            | High Severity 件数 | N | N | ▲/▼/→ N件 (XX%) |
+            | 1日あたり平均件数 | N.N | N.N | ▲/▼/→ |
+            | 最多カテゴリー | カテゴリー名 | カテゴリー名 | 変化有/変化なし |
+
+            ---
+
+            #### セクション 2: 日次トレンド（今週 vs 先週）
+
+            `## 2. 日次トレンド（今週 vs 先週）` として記載する。
+            GetSentinelIncidentsByDay の結果を使用する。
+
+            曜日ごとに今週・先週の件数を Markdown テーブルで表示する。
+
+            | 日付 | 曜日 | 今週（件） | 先週（件） | 増減 | High | Medium | Low | Informational |
+            |---|---|---|---|---|---|---|---|---|
+            | YYYY-MM-DD | 月 | N | N | ▲/▼/→ N | N | N | N | N |
+            | … | … | … | … | … | … | … | … | … |
+
+            テーブルの下に傾向の観察（1〜2文）を記載する。
+
+            ---
+
+            #### セクション 3: カテゴリー別分布（今週 vs 先週）
+
+            `## 3. カテゴリー別分布` として記載する。
+            GetSentinelIncidentsByCategory の結果を使用する。
+
+            | アラート種別 | ProviderName | 今週（件） | 先週（件） | 増減 | 備考 |
+            |---|---|---|---|---|---|
+            | アラート種別名 | プロバイダ名 | N | N | ▲/▼/→ N | NEW など |
+            | … | … | … | … | … | … |
+
+            先週に出現していないアラート種別には「NEW」と記載する。
+            テーブルの下に注目すべきアラート種別についての簡潔なコメントを記載する。
+
+            ---
+
+            #### セクション 4: 送信元IP アドレス ランキング（今週 vs 先週）
+
+            `## 4. 送信元IP アドレス ランキング` として記載する。
+            GetSentinelIncidentsBySourceIP の結果を使用する。
+
+            | 順位 | 送信元 IP | 今週（件） | 先週（件） | 増減 | 代表アラートタイトル | 備考 |
+            |---|---|---|---|---|---|---|
+            | 1 | x.x.x.x | N | N | ▲/▼/→ N | タイトル | NEW など |
+            | … | … | … | … | … | … | … |
+
+            先週に出現していないIPには「NEW」と記載する。
+
+            ---
+
+            #### セクション 5: 週次傾向サマリー — 前週比分析
+
+            `## 5. 週次傾向サマリー` として記載する。
+
+            すべてのデータを統合し、自然言語での傾向サマリーを箇条書きで記述する:
+            - 全体のボリュームと Severity 構成比の変化
+            - 急増したアラート種別や新たに出現したアラート種別
+            - 新しい送信元IPや急増している送信元IP
+            - 曜日パターンの変化（例: 週末集中化）
+            - Severity 分布の変化（High の割合増減）
+
+            3〜5個の箇条書きで記述し、最後に注意喚起メッセージを1文で締めくくる。
+
+            ---
+
+            #### セクション 6: 危険度上位5件のインシデント詳細
+
+            `## 6. 危険度上位5件のインシデント詳細` として記載する。
+            GetSentinelTopIncidents + GetSentinelIncidentAlerts の結果を使用する。
+
+            各インシデントを以下の形式で記載する:
+
+            ```
+            ### [Severity] インシデント #NNNN — タイトル
+
+            | 項目 | 内容 |
+            |---|---|
+            | Severity | High / Medium / Low |
+            | ステータス | New / Active / Closed |
+            | 発生日時 | YYYY-MM-DD HH:MM UTC |
+            | 関連アラート件数 | N 件 |
+            | 担当者 | 割り当て先（Owner） |
+            | 影響エンティティ | デバイス名、ユーザー名、IP など |
+            | MITRE ATT&CK タクティクス | タクティクス名 |
+            | MITRE ATT&CK テクニック | テクニック名 |
+
+            **技術的説明**
+            何が起きたか、なぜ危険かを2〜3文で記述する。
+
+            **推奨対応**
+            具体的な修復手順を箇条書きで記述する。
+            ```
+
+            ---
+
+            #### セクション 7: 推奨対策方針
+
+            `## 7. 推奨対策方針` として記載する。
+            セクション5の傾向とセクション6のインシデント詳細に基づき、
+            翌週に向けた3〜5個の優先度付きアクションを以下の形式で記述する:
+
+            ```
+            ### 🔴 [High] 即時対応
+            未解決の High インシデントへの封じ込め・修復手順を記述する。
+
+            ### 🛡️ [High/Medium] 防御強化
+            急増している脅威カテゴリーに対するポリシー・ルール変更を提案する。
+
+            ### 👁️ [Medium] 監視強化
+            急増・新規の送信元IPをウォッチリストに追加する提案を記述する。
+
+            ### 📚 [Low] ユーザー啓発
+            フィッシングやソーシャルエンジニアリング増加時に対象を絞った
+            トレーニングを推奨する（該当する場合のみ記載）。
+
+            ### 🏗️ [Low] アーキテクチャ改善
+            繰り返し発生するパターンへの構造的対策を提案する（該当する場合のみ記載）。
+            ```
+
+            最後に「**来週の重点監視ポイント**: 〜〜〜」として1〜2文で記載する。
+
+            ---
+
+            #### フッター
+
+            ```
+            ---
+            > 本レポートは Security Copilot エージェントにより自動生成されました。
+            > 生成日時: YYYY-MM-DD HH:MM UTC
+            ```
+
+            # 出力
+            上記の構造に従った Markdown レポートのみを出力してください。
+            メール送信は行わないこと。
+            レポート外のコメントや説明文は不要です。
+        ChildSkills:
+          - GetSentinelIncidentsByDay
+          - GetSentinelIncidentsByCategory
+          - GetSentinelIncidentsBySourceIP
+          - GetSentinelTopIncidents
+          - GetSentinelIncidentAlerts
+
+  # ─────────────────────────────────────────────────
+  # KQL スキル — Sentinel（SecurityIncident / SecurityAlert テーブル）
+  # ─────────────────────────────────────────────────
+  - Format: KQL
+    Skills:
+      - Name: GetSentinelIncidentsByDay
+        DisplayName: 日次インシデント集計（Sentinel）
+        Description: >-
+          過去14日間の Sentinel インシデントを日付ごとに集計し、日次件数と
+          Severity 内訳を週別（ThisWeek / LastWeek）で返す。
+        Settings:
+          Target: Sentinel
+          TenantId: "<YOUR_TENANT_ID>"
+          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
+          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
+          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          Template: |-
+            SecurityIncident
+            | where TimeGenerated > ago(14d)
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber
+            | extend Week = iff(CreatedTime > ago(7d), "ThisWeek", "LastWeek")
+            | summarize
+                TotalIncidents = count(),
+                HighCount = countif(Severity == "High"),
+                MediumCount = countif(Severity == "Medium"),
+                LowCount = countif(Severity == "Low"),
+                InformationalCount = countif(Severity == "Informational")
+              by Day = bin(CreatedTime, 1d), Week
+            | sort by Day asc
+
+      - Name: GetSentinelIncidentsByCategory
+        DisplayName: アラート種別別インシデント集計（Sentinel）
+        Description: >-
+          過去14日間の Sentinel アラートをアラート種別（AlertType）・
+          ProviderName・週別（ThisWeek / LastWeek）で集計する。
+        Settings:
+          Target: Sentinel
+          TenantId: "<YOUR_TENANT_ID>"
+          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
+          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
+          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          Template: |-
+            SecurityAlert
+            | where TimeGenerated > ago(14d)
+            | extend Week = iff(TimeGenerated > ago(7d), "ThisWeek", "LastWeek")
+            | summarize
+                AlertCount = count(),
+                Severities = make_set(AlertSeverity)
+              by AlertType, ProviderName, Week
+            | sort by AlertCount desc
+            | take 50
+
+      - Name: GetSentinelIncidentsBySourceIP
+        DisplayName: 送信元IP別インシデント集計（Sentinel）
+        Description: >-
+          過去14日間の Sentinel アラートに関連する送信元 IP アドレスを
+          週別（ThisWeek / LastWeek）で集計し、代表的なアラートタイトルと
+          Severity を含めて返す。
+        Settings:
+          Target: Sentinel
+          TenantId: "<YOUR_TENANT_ID>"
+          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
+          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
+          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          Template: |-
+            SecurityAlert
+            | where TimeGenerated > ago(14d)
+            | extend Week = iff(TimeGenerated > ago(7d), "ThisWeek", "LastWeek")
+            | mv-expand Entity = todynamic(Entities)
+            | where Entity.Type == "ip"
+            | extend SourceIP = tostring(Entity.Address)
+            | where isnotempty(SourceIP)
+            | summarize
+                AlertCount = dcount(SystemAlertId),
+                Titles = make_set(AlertName, 3),
+                Severities = make_set(AlertSeverity)
+              by SourceIP, Week
+            | sort by AlertCount desc
+            | take 40
+
+      - Name: GetSentinelTopIncidents
+        DisplayName: 危険度上位5件インシデント取得（Sentinel）
+        Description: >-
+          過去7日間の Sentinel インシデントを重大度の高い順・アラート数の多い順に
+          ソートし、上位5件のインシデント詳細を返す。
+        Settings:
+          Target: Sentinel
+          TenantId: "<YOUR_TENANT_ID>"
+          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
+          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
+          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          Template: |-
+            SecurityIncident
+            | where TimeGenerated > ago(7d)
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber
+            | extend AlertCount = array_length(todynamic(AlertIds))
+            | extend SeverityOrder = case(
+                Severity == "High", 1,
+                Severity == "Medium", 2,
+                Severity == "Low", 3,
+                4)
+            | sort by SeverityOrder asc, AlertCount desc
+            | take 5
+            | project
+                IncidentNumber,
+                Title,
+                Severity,
+                Status,
+                CreatedTime,
+                ClosedTime,
+                AlertCount,
+                Owner = tostring(Owner.assignedTo),
+                Labels,
+                Description,
+                ProviderName,
+                AdditionalData
+
+      - Name: GetSentinelIncidentAlerts
+        DisplayName: インシデント関連アラート取得（Sentinel）
+        Description: >-
+          指定されたインシデント番号に紐づくアラートの詳細を取得する。
+          タクティクス、テクニック、エンティティ情報を含む。
+        Inputs:
+          - Name: IncidentNumber
+            Description: 調査対象のインシデント番号
+            Required: true
+        Settings:
+          Target: Sentinel
+          TenantId: "<YOUR_TENANT_ID>"
+          SubscriptionId: "<YOUR_SUBSCRIPTION_ID>"
+          ResourceGroupName: "<YOUR_RESOURCE_GROUP>"
+          WorkspaceName: "<YOUR_WORKSPACE_NAME>"
+          Template: |-
+            SecurityIncident
+            | where TimeGenerated > ago(14d)
+            | where IncidentNumber == {{IncidentNumber}}
+            | summarize arg_max(TimeGenerated, *) by IncidentNumber
+            | mv-expand AlertId = todynamic(AlertIds)
+            | extend AlertId = tostring(AlertId)
+            | join kind=inner (
+                SecurityAlert
+                | where TimeGenerated > ago(14d)
+                | extend AlertId = tostring(SystemAlertId)
+              ) on AlertId
+            | project
+                IncidentNumber,
+                AlertName,
+                AlertSeverity,
+                Description1,
+                Tactics,
+                Techniques,
+                ProviderName1,
+                Entities,
+                TimeGenerated1
+            | take 20
